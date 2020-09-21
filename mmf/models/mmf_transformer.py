@@ -91,7 +91,9 @@ class MMFTransformerEmbeddings(nn.Module):
                         padding_idx=self.transformer_config.pad_token_id,
                     )
                 )
-            elif modality.type == "image":
+            # In other cases, MMFT expects that a modality specific encoder
+            # has already encoded the modality to embedding_dim size
+            else:
                 self.token_embeddings.append(
                     nn.Sequential(
                         nn.Linear(
@@ -236,6 +238,13 @@ class MMFTransformer(BaseTransformer):
                 else:
                     image_modal = sample_list.image_feature_0
                 input_ids[modality.key] = self.image_encoder(image_modal)
+            else:
+                if modality.key in sample_list:
+                    modal = sample_list[modality.key]
+                    encoder = getattr(self, f"{modality.key}_encoder", None)
+                    input_ids[modality.key] = modal
+                    if encoder is not None:
+                        input_ids[modality.key] = encoder(modal)
 
         # Position IDs
         position_ids: Dict[str, Tensor] = {}
@@ -274,10 +283,10 @@ class MMFTransformer(BaseTransformer):
                     masks[modality.key] = sample_list.input_mask[:, idx]
                 else:
                     masks[modality.key] = sample_list.input_mask
-
-            elif modality.type == "image":
-                if "image_mask" in sample_list:
-                    masks[modality.key] = sample_list.image_mask
+            else:
+                mask_attribute = f"{modality.key}_mask"
+                if mask_attribute in sample_list:
+                    masks[modality.key] = sample_list[mask_attribute]
                 else:
                     masks[modality.key] = torch.ones(
                         input_ids[modality.key].size()[:-1],
